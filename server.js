@@ -11,14 +11,23 @@ const app = express();
 // Enable CORS for all routes
 app.use(cors({
   origin: ['https://whiteboard-backend-1-ynjp.onrender.com/api',
-    'https://whiteboard-fsx1.vercel.app'
+    'https://whiteboard-fsx1.vercel.app',
+    'http://localhost:5173'  // Add local development
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
 
 app.use(express.json());
-app.use('/uploads', express.static('uploads'));
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+app.use('/uploads', express.static(uploadsDir));
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -304,102 +313,124 @@ app.post('/api/canvas/add-element', (req, res) => {
 
 // Export as PDF
 app.post('/api/canvas/export-pdf', async (req, res) => {
-  const { id } = req.body;
-  const canvas = canvases.get(id);
-  
-  if (!canvas) {
-    return res.status(404).json({ error: 'Canvas not found' });
-  }
-  
-  const doc = new PDFDocument({
-    size: [canvas.width, canvas.height]
-  });
-  
-  const filename = `canvas-${id}-${Date.now()}.pdf`;
-  const writeStream = fs.createWriteStream(`uploads/${filename}`);
-  doc.pipe(writeStream);
-  
-  const canvasInstance = createCanvas(canvas.width, canvas.height);
-  const ctx = canvasInstance.getContext('2d');
-
-  // Set white background
-  ctx.fillStyle = 'white';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Draw elements
-  for (const element of canvas.elements) {
-    ctx.lineWidth = 2;
+  try {
+    const { id } = req.body;
+    const canvas = canvases.get(id);
     
-    switch (element.type) {
-      case 'line':
-        ctx.beginPath();
-        ctx.strokeStyle = element.color;
-        ctx.moveTo(element.startX, element.startY);
-        ctx.lineTo(element.endX, element.endY);
-        ctx.stroke();
-        break;
-      case 'rectangle':
-        if (element.isFilled) {
-          ctx.fillStyle = element.color;
-          ctx.fillRect(element.x, element.y, element.width, element.height);
-        } else {
-          ctx.strokeStyle = element.color;
-          ctx.strokeRect(element.x, element.y, element.width, element.height);
-        }
-        break;
-      case 'circle':
-        ctx.beginPath();
-        if (element.isFilled) {
-          ctx.fillStyle = element.color;
-          ctx.arc(
-            element.x + element.radius,
-            element.y + element.radius,
-            element.radius,
-            0,
-            2 * Math.PI
-          );
-          ctx.fill();
-        } else {
-          ctx.strokeStyle = element.color;
-          ctx.arc(
-            element.x + element.radius,
-            element.y + element.radius,
-            element.radius,
-            0,
-            2 * Math.PI
-          );
-          ctx.stroke();
-        }
-        break;
-      case 'text':
-        ctx.font = `${element.fontSize}px Arial`;
-        ctx.fillStyle = element.color;
-        ctx.fillText(element.text, element.x, element.y + element.fontSize);
-        break;
-      case 'image':
-        try {
-          const image = await loadImage(element.path);
-          ctx.drawImage(image, element.x, element.y, element.width, element.height);
-        } catch (error) {
-          console.error('Error loading image:', error);
-        }
-        break;
+    if (!canvas) {
+      return res.status(404).json({ error: 'Canvas not found' });
     }
-  }
-
-  doc.image(canvasInstance.toBuffer(), 0, 0, {
-    width: canvas.width,
-    height: canvas.height
-  });
-  
-  doc.end();
-  
-  writeStream.on('finish', () => {
-    res.json({
-      message: 'PDF created',
-      url: `/uploads/${filename}`
+    
+    const doc = new PDFDocument({
+      size: [canvas.width, canvas.height]
     });
-  });
+    
+    const filename = `canvas-${id}-${Date.now()}.pdf`;
+    const filePath = path.join(uploadsDir, filename);
+    const writeStream = fs.createWriteStream(filePath);
+    
+    // Handle write stream errors
+    writeStream.on('error', (error) => {
+      console.error('Error writing PDF:', error);
+      return res.status(500).json({ error: 'Failed to create PDF' });
+    });
+
+    doc.pipe(writeStream);
+    
+    const canvasInstance = createCanvas(canvas.width, canvas.height);
+    const ctx = canvasInstance.getContext('2d');
+
+    // Set white background
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw elements
+    for (const element of canvas.elements) {
+      ctx.lineWidth = 2;
+      
+      try {
+        switch (element.type) {
+          case 'line':
+            ctx.beginPath();
+            ctx.strokeStyle = element.color;
+            ctx.moveTo(element.startX, element.startY);
+            ctx.lineTo(element.endX, element.endY);
+            ctx.stroke();
+            break;
+          case 'rectangle':
+            if (element.isFilled) {
+              ctx.fillStyle = element.color;
+              ctx.fillRect(element.x, element.y, element.width, element.height);
+            } else {
+              ctx.strokeStyle = element.color;
+              ctx.strokeRect(element.x, element.y, element.width, element.height);
+            }
+            break;
+          case 'circle':
+            ctx.beginPath();
+            if (element.isFilled) {
+              ctx.fillStyle = element.color;
+              ctx.arc(
+                element.x + element.radius,
+                element.y + element.radius,
+                element.radius,
+                0,
+                2 * Math.PI
+              );
+              ctx.fill();
+            } else {
+              ctx.strokeStyle = element.color;
+              ctx.arc(
+                element.x + element.radius,
+                element.y + element.radius,
+                element.radius,
+                0,
+                2 * Math.PI
+              );
+              ctx.stroke();
+            }
+            break;
+          case 'text':
+            ctx.font = `${element.fontSize}px Arial`;
+            ctx.fillStyle = element.color;
+            ctx.fillText(element.text, element.x, element.y + element.fontSize);
+            break;
+          case 'image':
+            try {
+              const image = await loadImage(element.path);
+              ctx.drawImage(image, element.x, element.y, element.width, element.height);
+            } catch (error) {
+              console.error('Error loading image:', error);
+            }
+            break;
+        }
+      } catch (error) {
+        console.error('Error drawing element:', error);
+      }
+    }
+
+    try {
+      doc.image(canvasInstance.toBuffer(), 0, 0, {
+        width: canvas.width,
+        height: canvas.height
+      });
+      
+      doc.end();
+      
+      writeStream.on('finish', () => {
+        res.json({
+          message: 'PDF created',
+          url: `/uploads/${filename}`
+        });
+      });
+    } catch (error) {
+      console.error('Error creating PDF:', error);
+      res.status(500).json({ error: 'Failed to create PDF' });
+    }
+  } catch (error) {
+    console.error('Error in PDF export:', error);
+    res.status(500).json({ error: 'Failed to export PDF' });
+  }
 });
 
 // Get canvas preview
