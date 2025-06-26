@@ -8,9 +8,30 @@ const path = require('path');
 
 const app = express();
 
-app.use(cors());
+// Enable CORS for all routes
+app.use(cors({
+  origin: 'https://whiteboard-backend-1-ynjp.onrender.com/api',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({ message: 'Whiteboard API Server' });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', message: 'Server is running' });
+});
+
+// API health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', message: 'API is running' });
+});
 
 // Store canvases in memory (in a production environment, use a proper database)
 const canvases = new Map();
@@ -464,7 +485,45 @@ app.get('/api/canvas/:id/preview', async (req, res) => {
   res.end(buffer);
 });
 
+// Move error handling middleware to the end
+// Handle 404 for undefined routes
+app.use((req, res, next) => {
+  if (!res.headersSent) {
+    res.status(404).json({
+      error: 'Not Found',
+      message: `Cannot ${req.method} ${req.path}`,
+      path: req.path
+    });
+  }
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  if (!res.headersSent) {
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: err.message
+    });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+const HOST = process.env.HOST || '0.0.0.0';
+
+// Make sure uploads directory exists
+if (!fs.existsSync('uploads')) {
+  fs.mkdirSync('uploads');
+}
+
+app.listen(PORT, HOST, () => {
+  console.log(`Server is running on http://${HOST}:${PORT}`);
+  console.log('Available endpoints:');
+  console.log('- GET  /');
+  console.log('- GET  /health');
+  console.log('- GET  /api/health');
+  console.log('- POST /api/canvas/initialize');
+  console.log('- POST /api/canvas/element-at');
+  console.log('- POST /api/canvas/update-element');
+  console.log('- GET  /api/canvas/:id/preview');
 }); 
