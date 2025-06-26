@@ -27,7 +27,18 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+// Serve uploaded files
 app.use('/uploads', express.static(uploadsDir));
+
+// Add a route to check if a file exists
+app.get('/uploads/:filename', (req, res, next) => {
+  const filePath = path.join(uploadsDir, req.params.filename);
+  if (fs.existsSync(filePath)) {
+    next();
+  } else {
+    res.status(404).json({ error: 'File not found' });
+  }
+});
 
 // Root endpoint
 app.get('/', (req, res) => {
