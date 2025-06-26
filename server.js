@@ -10,7 +10,9 @@ const app = express();
 
 // Enable CORS for all routes
 app.use(cors({
-  origin: 'https://whiteboard-backend-1-ynjp.onrender.com/api',
+  origin: ['https://whiteboard-backend-1-ynjp.onrender.com/api',
+    'https://whiteboard-fsx1.vercel.app'
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
